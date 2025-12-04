@@ -1,0 +1,19 @@
+# Bỏ qua thư mục dữ liệu
+MIND_small_train/
+MIND_small_dev/
+MIND_large_test/
+MIND_large_test/
+
+# Bỏ qua file nén
+*.zip
+*.rar
+
+# Bỏ qua file model nặng (checkpoint)
+
+# Bỏ qua file ảo python
+__pycache__/
+*.pyc
+
+# Bỏ qua file kết quả
+prediction.txt
+prediction.zip
