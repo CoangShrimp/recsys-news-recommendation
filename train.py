@@ -100,6 +100,25 @@ optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
 # --- 4. VÒNG LẶP TRAINING (THE LOOP) ---
 print("--- BẮT ĐẦU TRAINING ---")
+# --- DEBUG: KIỂM TRA DỮ LIỆU ---
+print("\n--- DEBUG DATA ---")
+temp_loader = DataLoader(train_dataset, batch_size=5, shuffle=True)
+sample_history, sample_candidate, sample_label = next(iter(temp_loader))
+
+print(f"Sample Label: {sample_label}")
+# Kiểm tra xem History có phải toàn số 0 không?
+print(f"History (Sum): {sample_history.sum().item()}") 
+# Kiểm tra xem Candidate có phải toàn số 0 không?
+print(f"Candidate (Sum): {sample_candidate.sum().item()}")
+
+if sample_candidate.sum().item() == 0:
+    print("❌ LỖI NGHIÊM TRỌNG: Candidate toàn số 0! Kiểm tra lại ID mapping.")
+else:
+    print("✅ Dữ liệu có vẻ ổn (khác 0).")
+    
+# Nếu History = 0 thì có thể do user mới (cold start), nhưng Candidate = 0 thì chắc chắn lỗi.
+import sys
+# sys.exit() # Bỏ comment dòng này nếu muốn dừng chương trình để sửa
 
 for epoch in range(EPOCHS):
     model.train() # Chuyển model sang chế độ train (bật dropout)
