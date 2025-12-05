@@ -12,13 +12,19 @@ class NewsEncoder(nn.Module):
         self.attention_linear = nn.Linear(num_filters, 1)
 
     def forward(self, x):
-        # x: [Batch, Sequence_Length]
-        emb = self.embedding(x) # [B, L, 300]
+        # x shape: [Batch, Sequence_Length]
+        emb = self.embedding(x) 
         emb = self.dropout(emb)
-        emb = emb.permute(0, 2, 1) # [B, 300, L]
         
-        feature_map = F.relu(self.conv(emb)) # [B, 400, L]
-        feature_map = feature_map.permute(0, 2, 1) # [B, L, 400]
+        # Bước 2: CNN
+        emb = emb.permute(0, 2, 1) 
+        
+        # --- SỬA TẠI ĐÂY ---
+        # Thay F.relu bằng torch.tanh
+        feature_map = torch.tanh(self.conv(emb)) 
+        # -------------------
+        
+        feature_map = feature_map.permute(0, 2, 1)
         
         # Attention Pooling
         att_score = self.attention_linear(feature_map) # [B, L, 1]
