@@ -50,27 +50,41 @@ class MINDDataset(Dataset):
         history_str = str(row['history'])
         history_ids = [] if pd.isna(history_str) or history_str == 'nan' else history_str.split(' ')
         
+        # Xử lý History (Giữ nguyên)
         if len(history_ids) > self.max_history: history_ids = history_ids[-self.max_history:]
-        
         history_seqs = [self.news_matrix.get(nid, self.empty_news) for nid in history_ids]
         while len(history_seqs) < self.max_history: history_seqs.insert(0, self.empty_news)
         
-        # Parse impressions
-        try:
-            items = row['impressions'].split(' ')
-            item = random.choice(items)
-            candidate_id, label = item.split('-')
-            label = int(label)
-        except:
-            candidate_id, label = ('', 0)
+        # --- SỬA ĐỔI QUAN TRỌNG TẠI ĐÂY (BALANCED SAMPLING) ---
+        impressions = row['impressions'].split(' ')
+        
+        # Tách riêng mẫu Dương (Click) và Mẫu Âm (Non-click)
+        positives = [imp for imp in impressions if imp.endswith('-1')]
+        negatives = [imp for imp in impressions if imp.endswith('-0')]
+        
+        # Chiến thuật tung đồng xu: 50% chọn Dương, 50% chọn Âm
+        # (Để mô hình thấy cả hai loại công bằng như nhau)
+        if len(positives) > 0 and len(negatives) > 0:
+            if random.random() > 0.5:
+                selected_item = random.choice(positives)
+            else:
+                selected_item = random.choice(negatives)
+        elif len(positives) > 0:
+            selected_item = random.choice(positives)
+        else:
+            selected_item = random.choice(impressions) # Fallback
             
+        candidate_id, label = selected_item.split('-')
+        label = int(label)
+        # --------------------------------------------------------
+
         candidate_seq = self.news_matrix.get(candidate_id, self.empty_news)
         
         return (torch.tensor(history_seqs, dtype=torch.long), 
                 torch.tensor(candidate_seq, dtype=torch.long), 
                 torch.tensor(label, dtype=torch.float))
 
-import pandas as pd # Import lại cho chắc
+import pandas as pd 
 print("--- Tạo DataLoader ---")
 train_dataset = MINDDataset(df_behaviors, news_title_matrix)
 train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
