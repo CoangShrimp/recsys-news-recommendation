@@ -13,7 +13,7 @@ DIR_TEST_DATA = './mind_large_dev_data'
 # Folder Train cũ (để lấy lại bộ từ điển Vocab y hệt lúc train)
 DIR_TRAIN_DATA = 'MIND_small_train'
 # Đường dẫn file model tốt nhất bạn muốn dùng
-MODEL_PATH = 'checkpoints/mind_model_ep3.pth' 
+MODEL_PATH = 'checkpoints/mind_model.pth' 
 OUTPUT_PATH = 'prediction.txt'
 BATCH_SIZE = 128
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
