@@ -10,7 +10,7 @@ import preprocess as pp
 from model import MINDRecModel
 
 # --- CẤU HÌNH ---
-DATA_PATH = 'MIND_small_train'  # Folder chứa dữ liệu train
+DATA_PATH = 'MIND_large_train'  # Folder chứa dữ liệu train
 BATCH_SIZE = 64
 LEARNING_RATE = 0.001
 EPOCHS = 5
