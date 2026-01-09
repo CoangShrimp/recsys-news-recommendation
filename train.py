@@ -1,45 +1,26 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader
-from tqdm import tqdm # Thư viện tạo thanh tiến trình
+from torch.utils.data import DataLoader, Dataset
+from tqdm import tqdm
 import os
-
-# Import các module chúng ta đã viết
+import random
+import pandas as pd
 import preprocess as pp
 from model import MINDRecModel
 
-# --- 1. CẤU HÌNH (HYPERPARAMETERS) ---
+# --- CẤU HÌNH ---
+DATA_PATH = 'MIND_small_train'  # Folder chứa dữ liệu train
 BATCH_SIZE = 64
 LEARNING_RATE = 0.001
-EPOCHS = 3 # Số lần học lặp lại toàn bộ dữ liệu (Demo để 3, thực tế cần 5-10)
+EPOCHS = 5
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-print(f"Đang sử dụng thiết bị: {DEVICE}")
-
-# --- 2. CHUẨN BỊ DỮ LIỆU ---
-# Load dữ liệu thô
-print("--- Bắt đầu load dữ liệu ---")
-df_news = pp.load_news_data(f'{pp.DATA_PATH}/news.tsv')
-df_behaviors = pp.load_behaviors_data(f'{pp.DATA_PATH}/behaviors.tsv')
-word2index = pp.build_vocab(df_news['title'])
-
-# Cache tiêu đề sang vector số
-print("--- Đang Cache dữ liệu bài báo ---")
-news_title_matrix = {}
-for news_id, row in tqdm(df_news.iterrows(), total=len(df_news), desc="Caching News"):
-    news_title_matrix[news_id] = pp.transform_text(row['title'], word2index)
-
-# Định nghĩa lại Dataset trong file này (hoặc import từ main cũ nếu bạn đã tách file)
-from torch.utils.data import Dataset
-import random
-
-# (Mình copy lại Class Dataset gọn vào đây để file này chạy độc lập được luôn)
-class MINDDataset(Dataset):
+# --- DATASET CLASS ---
+class MINDTrainDataset(Dataset):
     def __init__(self, behaviors_df, news_matrix):
         self.behaviors = behaviors_df
         self.news_matrix = news_matrix
-        self.max_history = pp.MAX_HISTORY_LENGTH
         self.empty_news = [0] * pp.MAX_TITLE_LENGTH
 
     def __len__(self):
@@ -47,36 +28,40 @@ class MINDDataset(Dataset):
 
     def __getitem__(self, idx):
         row = self.behaviors.iloc[idx]
+        
+        # 1. Xử lý History
         history_str = str(row['history'])
-        history_ids = [] if pd.isna(history_str) or history_str == 'nan' else history_str.split(' ')
-        
-        # Xử lý History (Giữ nguyên)
-        if len(history_ids) > self.max_history: history_ids = history_ids[-self.max_history:]
+        if pd.isna(history_str) or history_str == 'nan':
+            history_ids = []
+        else:
+            history_ids = history_str.split(' ')
+            
+        if len(history_ids) > pp.MAX_HISTORY_LENGTH:
+            history_ids = history_ids[-pp.MAX_HISTORY_LENGTH:]
+            
         history_seqs = [self.news_matrix.get(nid, self.empty_news) for nid in history_ids]
-        while len(history_seqs) < self.max_history: history_seqs.insert(0, self.empty_news)
-        
-        # --- SỬA ĐỔI QUAN TRỌNG TẠI ĐÂY (BALANCED SAMPLING) ---
-        impressions = row['impressions'].split(' ')
-        
-        # Tách riêng mẫu Dương (Click) và Mẫu Âm (Non-click)
+        while len(history_seqs) < pp.MAX_HISTORY_LENGTH:
+            history_seqs.insert(0, self.empty_news)
+
+        # 2. Xử lý Candidate (Balanced Sampling)
+        impressions = str(row['impressions']).split(' ')
         positives = [imp for imp in impressions if imp.endswith('-1')]
         negatives = [imp for imp in impressions if imp.endswith('-0')]
         
-        # Chiến thuật tung đồng xu: 50% chọn Dương, 50% chọn Âm
-        # (Để mô hình thấy cả hai loại công bằng như nhau)
-        if len(positives) > 0 and len(negatives) > 0:
-            if random.random() > 0.5:
-                selected_item = random.choice(positives)
-            else:
-                selected_item = random.choice(negatives)
-        elif len(positives) > 0:
-            selected_item = random.choice(positives)
+        # Chọn mẫu ngẫu nhiên cân bằng 50/50
+        if positives and negatives:
+            selected = random.choice(positives) if random.random() > 0.5 else random.choice(negatives)
+        elif positives:
+            selected = random.choice(positives)
         else:
-            selected_item = random.choice(impressions) # Fallback
+            selected = random.choice(impressions) # Fallback
             
-        candidate_id, label = selected_item.split('-')
-        label = int(label)
-        # --------------------------------------------------------
+        try:
+            candidate_id, label = selected.split('-')
+            label = float(label)
+        except:
+            candidate_id = 'UNKNOWN'
+            label = 0.0
 
         candidate_seq = self.news_matrix.get(candidate_id, self.empty_news)
         
@@ -84,81 +69,56 @@ class MINDDataset(Dataset):
                 torch.tensor(candidate_seq, dtype=torch.long), 
                 torch.tensor(label, dtype=torch.float))
 
-import pandas as pd 
-print("--- Tạo DataLoader ---")
-train_dataset = MINDDataset(df_behaviors, news_title_matrix)
-train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
-
-# --- 3. KHỞI TẠO MÔ HÌNH ---
-print("--- Khởi tạo Model ---")
-vocab_size = len(word2index) + 1
-model = MINDRecModel(num_words=vocab_size).to(DEVICE) # Đẩy model sang GPU/CPU
-
-# Định nghĩa Loss và Optimizer
-criterion = nn.BCEWithLogitsLoss() # Hàm loss chuẩn cho Binary Classification
-optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
-
-# --- 4. VÒNG LẶP TRAINING (THE LOOP) ---
-print("--- BẮT ĐẦU TRAINING ---")
-# --- DEBUG: KIỂM TRA DỮ LIỆU ---
-print("\n--- DEBUG DATA ---")
-temp_loader = DataLoader(train_dataset, batch_size=5, shuffle=True)
-sample_history, sample_candidate, sample_label = next(iter(temp_loader))
-
-print(f"Sample Label: {sample_label}")
-# Kiểm tra xem History có phải toàn số 0 không?
-print(f"History (Sum): {sample_history.sum().item()}") 
-# Kiểm tra xem Candidate có phải toàn số 0 không?
-print(f"Candidate (Sum): {sample_candidate.sum().item()}")
-
-if sample_candidate.sum().item() == 0:
-    print("❌ LỖI NGHIÊM TRỌNG: Candidate toàn số 0! Kiểm tra lại ID mapping.")
-else:
-    print("✅ Dữ liệu có vẻ ổn (khác 0).")
+def main():
+    print(f"🚀 Bắt đầu Training trên: {DEVICE}")
     
-# Nếu History = 0 thì có thể do user mới (cold start), nhưng Candidate = 0 thì chắc chắn lỗi.
-import sys
-# sys.exit() # Bỏ comment dòng này nếu muốn dừng chương trình để sửa
-
-for epoch in range(EPOCHS):
-    model.train() # Chuyển model sang chế độ train (bật dropout)
-    total_loss = 0
+    # 1. Load Data
+    df_news = pp.load_news_data(f'{DATA_PATH}/news.tsv')
+    df_behaviors = pp.load_behaviors_data(f'{DATA_PATH}/behaviors.tsv')
     
-    # Thanh tiến trình (Progress Bar)
-    progress_bar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{EPOCHS}")
+    # 2. Build Vocab & Cache
+    word2index = pp.build_vocab(df_news['title'])
     
-    for batch_idx, (history, candidate, label) in enumerate(progress_bar):
-        # 1. Chuyển dữ liệu sang thiết bị (GPU/CPU)
-        history = history.to(DEVICE)
-        candidate = candidate.to(DEVICE)
-        label = label.to(DEVICE)
+    print("⏳ Đang cache dữ liệu bài báo...")
+    news_title_matrix = {}
+    for nid, row in tqdm(df_news.iterrows(), total=len(df_news)):
+        news_title_matrix[nid] = pp.transform_text(row['title'], word2index)
         
-        # 2. Xóa gradient cũ
-        optimizer.zero_grad()
-        
-        # 3. Forward Pass (Dự đoán)
-        scores = model(history, candidate)
-        
-        # 4. Tính lỗi (Loss)
-        loss = criterion(scores, label)
-        
-        # 5. Backward Pass (Lan truyền ngược)
-        loss.backward()
-        
-        # 6. Cập nhật tham số
-        optimizer.step()
-        
-        # Cập nhật thông tin lên thanh progress bar
-        total_loss += loss.item()
-        progress_bar.set_postfix({'loss': total_loss / (batch_idx + 1)})
+    # 3. Setup DataLoader
+    train_dataset = MINDTrainDataset(df_behaviors, news_title_matrix)
+    # num_workers=2 giúp load dữ liệu nhanh hơn (đa luồng)
+    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=0) 
+    
+    # 4. Model & Optimizer
+    model = MINDRecModel(num_words=len(word2index)+1).to(DEVICE)
+    criterion = nn.BCEWithLogitsLoss()
+    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
+    
+    if not os.path.exists('checkpoints'):
+        os.makedirs('checkpoints')
 
-    # Kết thúc 1 Epoch
-    avg_loss = total_loss / len(train_loader)
-    print(f"Kết thúc Epoch {epoch+1} | Loss trung bình: {avg_loss:.4f}")
+    # 5. Training Loop
+    for epoch in range(EPOCHS):
+        model.train()
+        total_loss = 0
+        progress_bar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{EPOCHS}")
+        
+        for history, candidate, label in progress_bar:
+            history, candidate, label = history.to(DEVICE), candidate.to(DEVICE), label.to(DEVICE)
+            
+            optimizer.zero_grad()
+            scores = model(history, candidate)
+            loss = criterion(scores, label)
+            loss.backward()
+            optimizer.step()
+            
+            total_loss += loss.item()
+            progress_bar.set_postfix({'loss': total_loss / (progress_bar.n + 1)})
+        
+        # LƯU MODEL NGAY SAU MỖI EPOCH (Quan trọng!)
+        save_path = f'checkpoints/mind_model_ep{epoch+1}.pth'
+        torch.save(model.state_dict(), save_path)
+        print(f"✅ Đã lưu model: {save_path}")
 
-# --- 5. LƯU MODEL ---
-print("--- Lưu Model ---")
-if not os.path.exists('checkpoints'):
-    os.makedirs('checkpoints')
-torch.save(model.state_dict(), 'checkpoints/mind_model.pth')
-print("Đã lưu model vào checkpoints/mind_model.pth")
+if __name__ == "__main__":
+    main()
