@@ -61,3 +61,26 @@ The model follows a hierarchical structure:
 ├── predict.py            # Inference script for generating submission
 ├── requirements.txt      # Python dependencies
 └── README.md             # Project documentation
+```
+## Getting Started
+
+### 1. Prerequisites
+Install the required Python packages:
+
+```bash
+pip install torch pandas numpy tqdm scikit-learn
+```
+### 2. Data Preparation
+To run the code successfully, you need to download the datasets from the [MIND Website](https://msnews.github.io/) and extract them into the following folder structure:
+
+* **MIND_large_train/**: Contains `news.tsv` and `behaviors.tsv` (Large Train Set).
+* **MIND_small_train/**: Contains `news.tsv` (Small Train Set - used for consistent vocabulary building).
+* **MINDlarge_test/**: Contains `news.tsv` and `behaviors.tsv` (Large Test Set).
+
+### 3. Training
+To train the model on the Large dataset:
+
+```bash
+python train.py
+```
+
