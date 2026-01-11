@@ -83,4 +83,35 @@ To train the model on the Large dataset:
 ```bash
 python train.py
 ```
+* The script reads data from `MIND_large_train`.
+* Trained models are saved automatically to the `checkpoints/` folder after each epoch.
+* Default settings: 3 Epochs, Batch Size 128.
 
+### 4. Evaluation / Inference
+To generate the prediction file for the competition (CodaLab):
+
+```bash
+python predict.py
+```
+* The script loads the model from `checkpoints/`.
+* It reads test data from `MINDlarge_test`.
+* **Output:** Generates `prediction.txt` and compresses it into **`prediction.zip`**.
+
+---
+
+## Experimental Results
+
+The model was trained on MIND-large and evaluated on the **MIND-large Test set**.
+
+| Metric | Score | Evaluation |
+|--------|-------|------------|
+| **AUC** | **0.55** | Better than random baseline (0.50) |
+
+*Note: This result was achieved after training for 3 epochs.*
+
+---
+
+## References
+
+1.  *MIND: A Large-scale Dataset for News Recommendation* (Wu et al., ACL 2020).
+2.  *Neural News Recommendation with Multi-Head Self-Attention* (Wu et al., EMNLP 2019).
